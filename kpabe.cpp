@@ -7,8 +7,11 @@
 #include <array>
 #include <vector>
 
+#if defined(CONTIKI_TARGET_ZOUL) && defined(ZOUL_USE_PKA)
+#else
 #include <mbedtls/cipher.h>
 #include <mbedtls/md.h>
+#endif
 #include <pbc.h>
 
 #include "kpabe.hpp"
@@ -35,9 +38,12 @@ void hashElement(element_t e, uint8_t* hashBuf) {
    uint8_t* elementBytes = new uint8_t[elementSize + 1];
    element_to_bytes(elementBytes, e);
 
-   //TODO: use mbedtls_sha256
+#if defined(CONTIKI_TARGET_ZOUL) && defined(ZOUL_USE_PKA)
+   /* TODO */
+#else
    auto mdInfo = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
    mbedtls_md(mdInfo, elementBytes, elementSize, hashBuf);
+#endif
    
    delete [] elementBytes;
 }
@@ -47,6 +53,7 @@ void hashElement(element_t e, uint8_t* hashBuf) {
  *
  * Uses AES-256-CBC and zero-filled IV.
  */
+#if !defined(CONTIKI_TARGET_ZOUL) || !defined(ZOUL_USE_PKA)
 void mbedtlsSymCrypt(const uint8_t* input, size_t ilen, uint8_t* key, uint8_t* output, size_t* olen, mbedtls_operation_t mode) {
    const auto cipherInfo = mbedtls_cipher_info_from_type(MBEDTLS_CIPHER_AES_256_CBC);
    mbedtls_cipher_context_t ctx;
@@ -56,13 +63,20 @@ void mbedtlsSymCrypt(const uint8_t* input, size_t ilen, uint8_t* key, uint8_t* o
    iv.fill(0);
    mbedtls_cipher_crypt(&ctx, iv.data(), cipherInfo->iv_size, input, ilen, output, olen);
 }
+#endif
 
 void symEncrypt(const uint8_t* input, size_t ilen, uint8_t* key, uint8_t* output, size_t* olen) {
+#if defined(CONTIKI_TARGET_ZOUL) && defined(ZOUL_USE_PKA)
+#else
    mbedtlsSymCrypt(input, ilen, key, output, olen, MBEDTLS_ENCRYPT);
+#endif
 }
 
 void symDecrypt(const uint8_t* input, size_t ilen, uint8_t* key, uint8_t* output, size_t* olen) {
+#if defined(CONTIKI_TARGET_ZOUL) && defined(ZOUL_USE_PKA)
+#else
    mbedtlsSymCrypt(input, ilen, key, output, olen, MBEDTLS_DECRYPT);
+#endif
 }
 
 // Node
