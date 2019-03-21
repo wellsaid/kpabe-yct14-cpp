@@ -7,7 +7,7 @@
 #include <array>
 #include <vector>
 
-#if defined(CONTIKI_TARGET_ZOUL) && defined(ZOUL_USE_PKA)
+#if defined(CONTIKI_TARGET_ZOUL)
 #else
 #include <mbedtls/cipher.h>
 #include <mbedtls/md.h>
