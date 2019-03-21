@@ -11,7 +11,7 @@
 /**
  * @brief Generates the public and private parameters of the scheme.
  */
-static inline void yct14_setup(int* attributes, unsigned int num_attr,
+void yct14_setup(int* attributes, unsigned int num_attr,
 		void* publicParams, void* privateParams);
 
 #endif /* KPABE_YCT14_CPP_KPABE_H_ */
