@@ -1,30 +1,22 @@
 #ifndef kpabe_
 #define kpabe_
 
-#include <map>
-#include <string>
-#include <vector>
-#include <exception>
-
 #include <pbc.h>
 
-#pragma GCC visibility push(default)
+//#pragma GCC visibility push(default)
 
 /**
  * @brief KP-ABE implicit parameters.
  */
-static const std::string TYPE_A_PARAMS = \
+#define TYPE_A_PARAMS \
 "type a\n" \
-"q 87807107996633125224377819847540498158068831994142082" \
-"1102865339926647563088022295707862517942266222142315585" \
-"8769582317459277713367317481324925129998224791\n" \
-"h 12016012264891146079388821366740534204802954401251311" \
-"822919615131047207289359704531102844802183906537786776\n" \
+"q 25592495515765067051642300423336670621430538560550086238294375266242321140927190193065045904197241858828084036025639\n" \
+"h 35022192055157566125252273151275491786431099978820680852024212634920\n" \
 "r 730750818665451621361119245571504901405976559617\n" \
 "exp2 159\n" \
 "exp1 107\n" \
 "sign1 1\n" \
-"sign0 1\n";
+"sign0 1\n"
 
 /**
  * @brief Returns a pairing object.
@@ -47,25 +39,23 @@ public:
    
 private:
    Type type;
-   std::vector<Node> children;
+   Node* children;
+   size_t children_len;
 
 public:
    Node(const Node& other);
    Node(Node&& other);
-   Node(int attr);
-   Node(Type type, const std::vector<Node>& children = { });
    
    Node& operator=(Node other);
-   Node& operator=(Node&& other);
    
    void addChild(const Node& node);
-   const std::vector<Node>& getChildren() const;
+   size_t getChildren(Node** ret_children) const;
    
    //TODO: Abstract traversal order
    /**
     * @brief Returns all leaf nodes under the given node.
     */
-   std::vector<int> getLeafs() const;
+   void getLeafs(int** attrs, size_t* attrs_len) const;
    unsigned int getThreshold() const;
    unsigned int getPolyDegree() const;
    
@@ -76,7 +66,7 @@ public:
     * The index of the shares follow the index of the children of the node + 1 (index 0 is
     * the root secret).
     */
-   std::vector<element_s> splitShares(element_s& rootSecret);
+   size_t splitShares(element_s** shares, element_s& rootSecret);
 
    //TODO: Abstract tree traversal
    /**
@@ -85,7 +75,7 @@ public:
     * The secret shares for the access tree are returned as a vector, where the positions
     * correspond to the left-to-right tree traversal.
     */
-   std::vector<element_s> getSecretShares(element_s& rootSecret);
+   void getSecretShares(element_t** shares, size_t* shares_len, element_s& rootSecret);
    
    /**
     * @brief Computes the Lagrange coefficients.
@@ -93,23 +83,24 @@ public:
     * Assumes an interpolated value of 0 and that the children of the node have index()
     * values in the range 1..#numChildren.
     */
-   std::vector<element_s> recoverCoefficients();
+   size_t recoverCoefficients(element_s** ret);
    
    /**
     * @brief Computes the Lagrange coefficients for a satisfying subset of attributes.
     *
     * @return A vector of attribute-coefficient pairs.
     */
-   std::vector< std::pair<int, element_s> >
-   satisfyingAttributes(const std::vector<int>& attributes,
-                        element_s& currentCoeff);
+   void satisfyingAttributes(int** ret1, element_s** ret2, size_t* ret_len, int* attributes, size_t attrs_len,
+                           element_s* currentCoeff);
 };
 
 class DecryptionKey {
 
 public:
    Node accessPolicy;
-   std::map<int, element_s> Di;
+   int* Di1;
+   element_s* Di2;
+   size_t Di_len;
 
    DecryptionKey(const DecryptionKey& other) = default;
    DecryptionKey(const Node& policy);   
@@ -117,22 +108,30 @@ public:
 
 typedef struct {
    element_s pk;
-   std::map<int, element_s> Pi;
+   int* Pi1;
+   element_s* Pi2;
+   size_t Pi_len;
 } PublicParams;
 
 typedef struct {
    element_s mk;
-   std::map<int, element_s> Si;
+   int* Si1;
+   element_s* Si2;
+   size_t Si_len;
 } PrivateParams;
 
-typedef std::map<int, element_s> Cw_t;
+typedef struct {
+	int* index;
+	element_s* elem;
+	size_t len;
+} Cw_t;
 
 /**
  * @brief Generates the public and private parameters of the scheme.
  */
-void setup(const std::vector<int>& attributes,
-           PublicParams& publicParams,
-           PrivateParams& privateParams);
+void setup(const int* attributes, size_t attrs_len,
+           PublicParams** publicParams,
+           PrivateParams** privateParams);
 
 /**
  * @brief Creates a decryption key.
@@ -148,7 +147,7 @@ DecryptionKey keyGeneration(PrivateParams& privateParams, Node &accessPolicy);
  * Ciphertext C will hold the decryption parameters, the secret is Cs.
  */
 Cw_t createSecret(PublicParams& params,
-                 const std::vector<int>& attributes,
+                 const int* attributes, size_t attrs_len,
                  element_s& Cs);
 
 /**
@@ -156,7 +155,7 @@ Cw_t createSecret(PublicParams& params,
  */
 void recoverSecret(DecryptionKey& key,
                    Cw_t& Cw,
-                   const std::vector<int>& attributes,
+                   int* attributes, size_t attrs_len,
                    element_s& Cs);
 
 /**
@@ -164,22 +163,19 @@ void recoverSecret(DecryptionKey& key,
  *
  * This is the actual Encryption algorithm, but without a HMAC.
  */
-std::vector<uint8_t> encrypt(PublicParams& params,
-                             const std::vector<int>& attributes,
-                             const std::string& message,
-                             Cw_t& Cw);
+size_t encrypt(uint8_t** ct,
+		PublicParams& params, const int* attributes, size_t attrs_len,
+		char* message, Cw_t& Cw);
 
 /**
  * @brief Decrypts an attribute-encrypted message.
  *
  * This is the actual Decryptoon algorithm, but without a HMAC.
  */
-std::string decrypt(DecryptionKey& key,
+char* decrypt(DecryptionKey& key,
                     Cw_t& Cw,
-                    const std::vector<int>& attributes,
-                    const std::vector<uint8_t>& ciphertext);
+                    int* attributes, size_t attrs_len,
+                    uint8_t* ciphertext, size_t ct_len);
 
-class UnsatError: public std::exception { };
-
-#pragma GCC visibility pop
+//#pragma GCC visibility pop
 #endif

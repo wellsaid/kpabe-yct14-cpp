@@ -8,13 +8,11 @@
 #include "kpabe.hpp"
 #include "kpabe.h"
 
-extern "C" void yct14_setup(const int* attrs_c, unsigned int num_attrs,
-		void* pubParBuff, void* prvParBuff) {
+extern "C" {
 
-	std::vector<int> attrs_cpp;
-	for(unsigned int i = 0; i < num_attrs; i++){
-		attrs_cpp.push_back(attrs_c[i]);
-	}
+void yct14_setup(const int* attrs, unsigned int num_attrs,
+		void** pubParBuff, void** prvParBuff) {
+	setup(attrs, num_attrs, (PublicParams**) pubParBuff, (PrivateParams**) prvParBuff);
+}
 
-	setup(attrs_cpp, (PublicParams&) pubParBuff, (PrivateParams&) prvParBuff);
 }

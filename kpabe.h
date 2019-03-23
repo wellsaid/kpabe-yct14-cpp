@@ -11,7 +11,15 @@
 /**
  * @brief Generates the public and private parameters of the scheme.
  */
-void yct14_setup(int* attributes, unsigned int num_attr,
-		void* publicParams, void* privateParams);
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+void yct14_setup(const int* attrs, unsigned int num_attrs,
+		void** pubParBuff, void** prvParBuff);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* KPABE_YCT14_CPP_KPABE_H_ */
