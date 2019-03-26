@@ -21,6 +21,8 @@ OBJFILES = ${patsubst %.cpp,%.o,$(SRCFILES)}
 HFILES = kpabe.hpp kpabe.h
 DIR_HFILES = ${addprefix $(SRCDIR)/,$(HFILES)}
 
+LDFLAGS += -lgmp -lpbc
+
 all: libyao.a
 
 install: $(DIR_HFILES) libyao.a $(PREFIX)/include/ $(PREFIX)/lib/
@@ -45,5 +47,4 @@ libyao.a: $(OBJFILES)
 %.o: $(SRCDIR)/%.cpp
 	$(TRACE_CXX)
 	$(Q)$(CXX) $(CFLAGS) $(CXXFLAGS) $(LDFLAGS) -c $^ -o $@
-	
 	
