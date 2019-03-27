@@ -45,6 +45,8 @@ private:
 public:
    Node(const Node& other);
    Node(Node&& other);
+   Node(int attr);
+   Node(Type type, Node* children = NULL, size_t children_len = 0);
    
    Node& operator=(Node other);
    
@@ -66,7 +68,7 @@ public:
     * The index of the shares follow the index of the children of the node + 1 (index 0 is
     * the root secret).
     */
-   size_t splitShares(element_s** shares, element_s& rootSecret);
+   size_t splitShares(element_t** shares, element_t rootSecret);
 
    //TODO: Abstract tree traversal
    /**
@@ -75,7 +77,7 @@ public:
     * The secret shares for the access tree are returned as a vector, where the positions
     * correspond to the left-to-right tree traversal.
     */
-   void getSecretShares(element_t** shares, size_t* shares_len, element_s& rootSecret);
+   void getSecretShares(element_t** shares, size_t* shares_len, element_t rootSecret);
    
    /**
     * @brief Computes the Lagrange coefficients.
@@ -99,24 +101,26 @@ class DecryptionKey {
 public:
    Node accessPolicy;
    int* Di1;
-   element_s* Di2;
+   element_t* Di2;
    size_t Di_len;
 
-   DecryptionKey(const DecryptionKey& other) = default;
-   DecryptionKey(const Node& policy);   
+   DecryptionKey(const DecryptionKey& other);
+   DecryptionKey(const Node& policy);
+
+   DecryptionKey& operator=(DecryptionKey other);
 };
 
 typedef struct {
-   element_s pk;
+   element_t pk;
    int* Pi1;
-   element_s* Pi2;
+   element_t* Pi2;
    size_t Pi_len;
 } PublicParams;
 
 typedef struct {
-   element_s mk;
+   element_t mk;
    int* Si1;
-   element_s* Si2;
+   element_t* Si2;
    size_t Si_len;
 } PrivateParams;
 
@@ -138,7 +142,7 @@ void setup(const int* attributes, size_t attrs_len,
  *
  * This is the KeyGeneration algorithm.
  */
-DecryptionKey keyGeneration(PrivateParams& privateParams, Node &accessPolicy);
+DecryptionKey keyGeneration(PrivateParams* privateParams, Node* accessPolicy);
 
 /**
  * @brief Creates a KP-ABE secret.

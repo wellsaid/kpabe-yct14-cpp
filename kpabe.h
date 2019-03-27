@@ -15,8 +15,28 @@
 extern "C" {
 #endif
 
+/* list of possible policies */
+/**
+ * @brief Worst case policy
+ *
+ * A policy with all attributes in an AND
+ */
+#define YCT14_FLAT_POLICY 1
+/**
+ * @brief "Flat" policy
+ *
+ * A policy with all attributes like this: (a AND b) AND (c AND d) ...
+ */
+#define YCT14_3LEVEL_POLICY 2
+
+void* build_yao_policies(int* attr_univ, size_t num_attr, uint8_t policy);
+
 void yct14_setup(const int* attrs, unsigned int num_attrs,
 		void** pubParBuff, void** prvParBuff);
+
+void yct14_priv_free(void* prvParBuff);
+
+void* yct14_keygen(void* prvParBuff, void* accessPolicyBuff);
 
 #ifdef __cplusplus
 }

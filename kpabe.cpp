@@ -21,9 +21,10 @@ uint8_t isInit = 0;
 
 pairing_ptr getPairing() {
    if(!isInit) {
-      pairing_init_set_str(&pairing, TYPE_A_PARAMS);
-      isInit = 1;
+	   pairing_init_set_str(&pairing, TYPE_A_PARAMS);
+	   isInit = 1;
    }
+
    return &pairing;
 }
 
@@ -35,7 +36,7 @@ void hashElement(element_t e, uint8_t* hashBuf) {
 #if defined(CONTIKI_TARGET_ZOUL)
    /* TODO */
 #else
-   mbedtls_md_info_t* mdInfo = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
+   const mbedtls_md_info_t* mdInfo = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
    mbedtls_md(mdInfo, elementBytes, elementSize, hashBuf);
 #endif
    
@@ -91,6 +92,20 @@ Node::Node(Node&& other):
    children_len(other.children_len){
 }
 
+Node::Node(int attr) {
+   this->attr = attr;
+   this->type = Type::AND;
+   this->children = NULL;
+   this->children_len = 0;
+}
+
+Node::Node(Type type, Node* children, size_t children_len) {
+   this->children = children;
+   this->type = type;
+   this->children_len = children_len;
+   this->attr = 0;
+}
+
 Node& Node::operator=(Node other) {
 	//TODO: check if not self
 	//assert(this != &other);
@@ -127,7 +142,7 @@ void Node::getLeafs(int** attrs, size_t* attrs_len) const {
 
 	   free(*attrs);
 	   *attrs = tmp;
-	   *attrs_len++;
+	   (*attrs_len)++;
    } else {
 	   unsigned int i;
 
@@ -158,24 +173,24 @@ unsigned int Node::getPolyDegree() const {
    return getThreshold() - 1;
 }
 
-size_t Node::splitShares(element_s** shares, element_s& rootSecret) {
+size_t Node::splitShares(element_t** shares, element_t rootSecret) {
 	unsigned int x;
 
 	// Generate the coefficients for the polynomial.
 	unsigned int threshold = getThreshold();
 	element_s* coeff = (element_s*) malloc(threshold*sizeof(element_s*));
    
-	element_init_same_as(&coeff[0], &rootSecret);
-	element_set(&coeff[0], &rootSecret);
+	element_init_same_as(&coeff[0], rootSecret);
+	element_set(&coeff[0], rootSecret);
    
 	// Generate random coefficients, except for q(0), which is set to the rootSecret.
 	for(int i = 1; i <= getPolyDegree(); ++i) {
-		element_init_same_as(&coeff[i], &rootSecret);
+		element_init_same_as(&coeff[i], rootSecret);
 		element_random(&coeff[i]);
 	}
 
 	// Calculate the shares for each child.
-	*shares = (element_s*) malloc(children_len*sizeof(element_s));
+	*shares = (element_t*) malloc(children_len*sizeof(element_t));
    
 	element_t temp;
 	element_init_Zr(temp, getPairing());
@@ -183,14 +198,14 @@ size_t Node::splitShares(element_s** shares, element_s& rootSecret) {
    // The scheme decription defines an ordering on the children in a node (index(x)).
    // Here, we implicitly use a left to right order.
    for(x = 1; x <= children_len; ++x) {
-      element_s* share = &*shares[x - 1];
-      element_init_same_as(share, &rootSecret);
-      element_set0(share);
+      element_t* share = &*shares[x - 1];
+      element_init_same_as(*share, rootSecret);
+      element_set0(*share);
       // share = coeff[0] + coeff[1] * x + ... + coeff[threshold - 1] * x ^ (threshold - 1)
       for(int power = 0; power < threshold; ++power) {
          element_set_si(temp, pow(x, power)); //TODO: handle pow
          element_mul(temp, temp, &coeff[power]);
-         element_add(share, share, temp);
+         element_add(*share, *share, temp);
       }
    }
    
@@ -204,21 +219,21 @@ size_t Node::splitShares(element_s** shares, element_s& rootSecret) {
 }//splitShares
 
 /* TODO: Consider rewriting in iterative way to avoid frequent malloc-free */
-void Node::getSecretShares(element_t** shares, size_t* shares_len, element_s& rootSecret) {
+void Node::getSecretShares(element_t** shares, size_t* shares_len, element_t rootSecret) {
    if(children_len == 0) {
 	   element_t* tmp = (element_t*) malloc((*shares_len+1)*sizeof(element_t));
 	   if(*shares_len > 0){
 		   memcpy(tmp, *shares, (*shares_len)*sizeof(element_t));
 	   }
-	   memcpy(tmp + *shares_len, &rootSecret, sizeof(element_t));
+	   memcpy(tmp + *shares_len, rootSecret, sizeof(element_t));
 
 	   free(*shares);
 	   *shares = tmp;
-	   *shares_len++;
+	   (*shares_len)++;
    } else {
 	   unsigned int i;
 
-	  element_s* childSplits = NULL;
+	  element_t* childSplits = NULL;
 	  size_t childSplitsLen = splitShares(&childSplits, rootSecret);
       for(i = 0; i < children_len; i++) {
     	  children[i].getSecretShares(shares, shares_len, childSplits[i]);
@@ -319,7 +334,25 @@ size_t Node::getChildren(Node** ret_children) const {
 
 // DecryptionKey
 
-DecryptionKey::DecryptionKey(const Node& policy): accessPolicy(policy) { }
+DecryptionKey::DecryptionKey(const Node& policy): accessPolicy(policy) {
+	Di1 = NULL;
+	Di2 = NULL;
+	Di_len = 0;
+}
+
+DecryptionKey::DecryptionKey(const DecryptionKey& other):
+	Di1(other.Di1), Di2(other.Di2), Di_len(other.Di_len),
+	accessPolicy(other.accessPolicy) { }
+
+DecryptionKey& DecryptionKey::operator=(DecryptionKey other) {
+	//TODO: check if not self
+	//assert(this != &other);
+	Di1 = other.Di1;
+	Di2 = other.Di2;
+	Di_len = other.Di_len;
+	accessPolicy = other.accessPolicy;
+	return *this;
+}
 
 // Algorithm Setup
 
@@ -327,10 +360,12 @@ void setup(const int* attributes, size_t attrs_len,
            PublicParams** publicParams,
            PrivateParams** privateParams) {
    *publicParams = (PublicParams*) malloc(sizeof(PublicParams));
+   //memset(*publicParams, 0, sizeof(PublicParams));
    *privateParams = (PrivateParams*) malloc(sizeof(PrivateParams));
+   //memset(*privateParams, 0, sizeof(PrivateParams));
    
-   element_init_Zr(&(*privateParams)->mk, getPairing());
-   element_random(&(*privateParams)->mk);
+   element_init_Zr((*privateParams)->mk, getPairing());
+   element_random((*privateParams)->mk);
 
    element_t g;
    element_init_G1(g, getPairing());
@@ -338,28 +373,28 @@ void setup(const int* attributes, size_t attrs_len,
    
    // Generate a random public and private element for each attribute
    (*publicParams)->Pi1 = (int*) malloc(attrs_len*sizeof(int));
-   (*publicParams)->Pi2 = (element_s*) malloc(attrs_len*sizeof(element_s));
+   (*publicParams)->Pi2 = (element_t*) malloc(attrs_len*sizeof(element_t));
    (*publicParams)->Pi_len = attrs_len;
 
    (*privateParams)->Si1 = (int*) malloc(attrs_len*sizeof(int));
-   (*privateParams)->Si2 = (element_s*) malloc(attrs_len*sizeof(element_s));
+   (*privateParams)->Si2 = (element_t*) malloc(attrs_len*sizeof(element_t));
    (*privateParams)->Si_len = attrs_len;
 
    unsigned int i,j;
    for(i = 0; i < attrs_len; i++) {
 	   // private
 	   (*privateParams)->Si1[i] = attributes[i];
-	   element_init_Zr(&(*privateParams)->Si2[i], getPairing());
-	   element_random(&(*privateParams)->Si2[i]);
+	   element_init_Zr((*privateParams)->Si2[i], getPairing());
+	   element_random((*privateParams)->Si2[i]);
       
 	   // public
 	   (*publicParams)->Pi1[i] = attributes[i];
-	   element_init_G1(&(*publicParams)->Pi2[i], getPairing());
-	   element_pow_zn(&(*publicParams)->Pi2[i], g, &(*privateParams)->Si2[i]);
+	   element_init_G1((*publicParams)->Pi2[i], getPairing());
+	   element_pow_zn((*publicParams)->Pi2[i], g, (*privateParams)->Si2[i]);
    }
    
-   element_init_G1(&(*publicParams)->pk, getPairing());
-   element_pow_zn(&(*publicParams)->pk, g, &(*privateParams)->mk);
+   element_init_G1((*publicParams)->pk, getPairing());
+   element_pow_zn((*publicParams)->pk, g, (*privateParams)->mk);
    element_clear(g);
 }
 
@@ -373,34 +408,29 @@ void setup(const int* attributes, size_t attrs_len,
  *    in the first element, the shares in the second, the scramblng keys in the third.
  * @type scramblingFunc function<void (element_t, element_t, element_t)>
  */
-DecryptionKey _keyGeneration(element_s& rootSecret,
+DecryptionKey _keyGeneration(element_t rootSecret,
 		int* scramblingKeys1,
-		element_s* scramblingKeys2,
+		element_t* scramblingKeys2,
 		size_t scramblingKeysLen,
 		void scramblingFunc(element_t, element_t, element_t),
-		Node& accessPolicy) {
+		Node* accessPolicy) {
 
    int* leafs = NULL;
    size_t leafs_len = 0;
-   accessPolicy.getLeafs(&leafs, &leafs_len);
+   accessPolicy->getLeafs(&leafs, &leafs_len);
    element_t* shares = NULL;
    size_t shares_len = 0;
-   accessPolicy.getSecretShares(&shares, &shares_len, rootSecret);
+   accessPolicy->getSecretShares(&shares, &shares_len, rootSecret);
    
-   DecryptionKey key(accessPolicy);
+   DecryptionKey key(*accessPolicy);
+   key.Di1 = (int*) malloc(leafs_len*sizeof(int));
+   key.Di2 = (element_t*) malloc(leafs_len*sizeof(element_t));
+   key.Di_len = leafs_len;
+
    // The below is: Du[attr] = shares[attr] / attributeSecrets[attr]
    unsigned int i, j;
    for(i = 0; i < leafs_len; i++) {
-	   element_s* attrDi;
-	   for(j = 0; j < key.Di_len; j++){
-		   if(key.Di1[j] == leafs[i]){
-			   attrDi = &key.Di2[j];
-			   break;
-		   }
-	   }
-
-	   element_init_Zr(attrDi, getPairing());
-	   element_s* scramblingKey;
+	   element_t* scramblingKey;
 	   for(j = 0; j < scramblingKeysLen; j++){
 		   if(scramblingKeys1[j] == leafs[i]){
 			   scramblingKey = &scramblingKeys2[j];
@@ -408,7 +438,8 @@ DecryptionKey _keyGeneration(element_s& rootSecret,
 		   }
 	   }
 
-	   scramblingFunc(attrDi, shares[i], scramblingKey);
+	   element_init_Zr(key.Di2[i], getPairing());
+	   scramblingFunc(key.Di2[i], shares[i], *scramblingKey);
    }
    
    for(i = 0; i < shares_len; i++) {
@@ -421,9 +452,9 @@ DecryptionKey _keyGeneration(element_s& rootSecret,
 }
 
 
-DecryptionKey keyGeneration(PrivateParams& privateParams,
-                            Node& accessPolicy) {
-   return _keyGeneration(privateParams.mk, privateParams.Si1, privateParams.Si2, privateParams.Si_len, element_div, accessPolicy);
+DecryptionKey keyGeneration(PrivateParams* privateParams, Node* accessPolicy) {
+   return _keyGeneration(privateParams->mk, privateParams->Si1, privateParams->Si2,
+		   privateParams->Si_len, element_div, accessPolicy);
 }
 
 Cw_t createSecret(PublicParams& params,
@@ -434,7 +465,7 @@ Cw_t createSecret(PublicParams& params,
    element_random(k);
    
    element_init_G1(&Cs, getPairing());
-   element_pow_zn(&Cs, &params.pk, k);
+   element_pow_zn(&Cs, params.pk, k);
    
    Cw_t Cw;
    unsigned int i, j;
@@ -448,14 +479,14 @@ Cw_t createSecret(PublicParams& params,
       }
       element_init_G1(elem, getPairing());
 
-      element_s* param;
+      element_t* param;
       for(j = 0; j < params.Pi_len; j++){
     	  if(params.Pi1[j] == attributes[i]){
     		  param = &params.Pi2[j];
     		  break;
     	  }
       }
-      element_pow_zn(elem, param, k);
+      element_pow_zn(elem, *param, k);
    }
    element_clear(k);
    
@@ -498,14 +529,14 @@ void recoverSecret(DecryptionKey& key,
    // NOTE: attrCoeffPair is modified
    unsigned int i, j;
    for(i = 0; i < sat_len; i++) {
-	   element_s* attrDi;
+	   element_t* attrDi;
 	   for(j = 0; j < key.Di_len; j++){
 		   if(key.Di1[j] == sat1[i]){
 			   attrDi = &key.Di2[j];
 			   break;
 		   }
 	   }
-      element_mul(&sat2[i], attrDi, &sat2[i]);
+      element_mul(&sat2[i], *attrDi, &sat2[i]);
 
       element_s* elem;
       for(j = 0; j < Cw.len; j++){
