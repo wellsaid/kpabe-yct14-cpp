@@ -85,15 +85,15 @@ public:
     * Assumes an interpolated value of 0 and that the children of the node have index()
     * values in the range 1..#numChildren.
     */
-   size_t recoverCoefficients(element_s** ret);
+   size_t recoverCoefficients(element_t** ret);
    
    /**
     * @brief Computes the Lagrange coefficients for a satisfying subset of attributes.
     *
     * @return A vector of attribute-coefficient pairs.
     */
-   void satisfyingAttributes(int** ret1, element_s** ret2, size_t* ret_len, int* attributes, size_t attrs_len,
-                           element_s* currentCoeff);
+   void satisfyingAttributes(int** ret1, element_t** ret2, size_t* ret_len, int* attributes, size_t attrs_len,
+                           element_t* currentCoeff);
 };
 
 class DecryptionKey {
@@ -157,10 +157,10 @@ Cw_t createSecret(PublicParams* params,
 /**
  * @brief Recovers a KP-ABE secret using the decryption key and decryption parameters.
  */
-void recoverSecret(DecryptionKey& key,
-                   Cw_t& Cw,
+void recoverSecret(DecryptionKey* key,
+                   Cw_t* Cw,
                    int* attributes, size_t attrs_len,
-                   element_s& Cs);
+                   element_t Cs);
 
 /**
  * @brief Encrypts a message under a given attribute set.
@@ -176,8 +176,8 @@ size_t encrypt(uint8_t** ct,
  *
  * This is the actual Decryptoon algorithm, but without a HMAC.
  */
-char* decrypt(DecryptionKey& key,
-                    Cw_t& Cw,
+char* decrypt(DecryptionKey* key,
+                    Cw_t* Cw,
                     int* attributes, size_t attrs_len,
                     uint8_t* ciphertext, size_t ct_len);
 

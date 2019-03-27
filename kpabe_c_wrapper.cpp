@@ -78,6 +78,15 @@ size_t yct14_encrypt(uint8_t** ct, void* pubParBuff, const int* attributes, size
 	return encrypt(ct, params, attributes, attrs_len, message, Cw);
 }
 
+char* yct14_decrypt(void* keyBuff,
+                    void* CwBuff,
+                    int* attributes, size_t attrs_len,
+                    uint8_t* ciphertext, size_t ct_len){
+	DecryptionKey* key = (DecryptionKey*) keyBuff;
+	Cw_t* Cw = (Cw_t*) CwBuff;
+
+	decrypt(key, Cw, attributes, attrs_len, ciphertext, ct_len);
+}
 
 // memory freeing
 void yct14_priv_free(void* prvParBuff) {
@@ -90,6 +99,17 @@ void yct14_priv_free(void* prvParBuff) {
 	}
 	free(priv->Si2);
 	free(prvParBuff);
+}
+
+void yct14_pub_free(void* pubParBuff) {
+	PublicParams* pub = (PublicParams*) pubParBuff;
+
+	element_clear(pub->pk);
+	free(pub->Pi1);
+	for(unsigned int i = 0; i < pub->Pi_len; i++){
+			element_clear(pub->Pi2[i]);
+	}
+	free(pub->Pi2);
 }
 
 }

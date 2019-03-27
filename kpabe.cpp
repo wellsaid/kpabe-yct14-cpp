@@ -242,9 +242,9 @@ void Node::getSecretShares(element_t** shares, size_t* shares_len, element_t roo
    }
 }
 
-size_t Node::recoverCoefficients(element_s** coeff) {
+size_t Node::recoverCoefficients(element_t** coeff) {
 	unsigned int threshold = getThreshold();
-	*coeff = (element_s*) malloc(threshold*sizeof(element_s));
+	*coeff = (element_t*) malloc(threshold*sizeof(element_t));
 
 	element_t iVal, jVal, temp;
 	element_init_Zr(iVal, getPairing());
@@ -253,9 +253,9 @@ size_t Node::recoverCoefficients(element_s** coeff) {
    
 	for(int i = 1; i <= threshold; ++i) {
 		element_set_si(iVal, i);
-		element_s* result = coeff[i - 1];
-		element_init_Zr(result, getPairing());
-		element_set1(result);
+		element_t* result = coeff[i - 1];
+		element_init_Zr(*result, getPairing());
+		element_set1(*result);
 		for(int j = 1; j <= threshold; ++j) {
 			if(i == j) {
 				continue;
@@ -264,7 +264,7 @@ size_t Node::recoverCoefficients(element_s** coeff) {
 			element_set_si(jVal, -j);
 			element_add(temp, iVal, jVal);
 			element_div(temp, jVal, temp);
-			element_mul(result, result, temp);
+			element_mul(*result, *result, temp);
 		}
 	}
 
@@ -276,8 +276,8 @@ size_t Node::recoverCoefficients(element_s** coeff) {
 }
 
 /* TODO: Consider rewriting in iterative way to avoid frequent malloc-free */
-void Node::satisfyingAttributes(int** ret1, element_s** ret2, size_t* ret_len, int* attributes, size_t attrs_len,
-                        element_s* currentCoeff) {
+void Node::satisfyingAttributes(int** ret1, element_t** ret2, size_t* ret_len, int* attributes, size_t attrs_len,
+                        element_t* currentCoeff) {
 	unsigned int i;
 
 	if (children_len == 0) {
@@ -287,39 +287,39 @@ void Node::satisfyingAttributes(int** ret1, element_s** ret2, size_t* ret_len, i
 			}
 		}
 
-		if(i == attrs_len){
+		if(i < attrs_len){
 			//sat.push_back({attr, currentCoeff});
 			int* tmp1 = (int*) malloc((*ret_len+1)*sizeof(int));
-			element_s* tmp2 = (element_s*) malloc((*ret_len+1)*sizeof(element_s));
+			element_t* tmp2 = (element_t*) malloc((*ret_len+1)*sizeof(element_t));
 			if(*ret_len > 0){
 				memcpy(tmp1, *ret1, (*ret_len)*sizeof(int));
-				memcpy(tmp2, *ret2, (*ret_len)*sizeof(element_s));
+				memcpy(tmp2, *ret2, (*ret_len)*sizeof(element_t));
 			}
 			tmp1[*ret_len] = attr;
-			memcpy(tmp2 + *ret_len, currentCoeff, sizeof(element_s));
+			memcpy(tmp2 + *ret_len, currentCoeff, sizeof(element_t));
 
 			free(*ret1);
 			free(*ret2);
 			*ret1 = tmp1;
 			*ret2 = tmp2;
-			*ret_len++;
+			(*ret_len)++;
 		}
 	} else {
-		element_s* coeff = NULL;
+		element_t* coeff = NULL;
 		size_t coeff_len = recoverCoefficients(&coeff);
       
 		if(type == Type::AND) {
 			int* totalChildSat1 = NULL;
-			element_s* totalChildSat2 = NULL;
+			element_t* totalChildSat2 = NULL;
 			size_t totalChildSatLen = 0;
 
 			for(i = 0; i < children_len; ++i) {
-				element_mul(&coeff[i], &coeff[i], currentCoeff);
+				element_mul(coeff[i], coeff[i], *currentCoeff);
 				children[i].satisfyingAttributes(ret1, ret2, ret_len, attributes, attrs_len, &coeff[i]);
 			}
 		} else {
-			element_s* recCoeff0 = &coeff[0];
-			element_mul(recCoeff0, recCoeff0, currentCoeff);
+			element_t* recCoeff0 = &coeff[0];
+			element_mul(*recCoeff0, *recCoeff0, *currentCoeff);
 			for (i = 0; i < children_len; ++i) {
 				children[i].satisfyingAttributes(ret1, ret2, ret_len, attributes, attrs_len, recCoeff0);
 			}
@@ -436,6 +436,7 @@ DecryptionKey _keyGeneration(element_t rootSecret,
 		   }
 	   }
 
+	   key.Di1[i] = leafs[i];
 	   element_init_Zr(key.Di2[i], getPairing());
 	   scramblingFunc(key.Di2[i], shares[i], *scramblingKey);
    }
@@ -487,27 +488,21 @@ void createSecret(Cw_t** Cw, PublicParams* params,
    element_clear(k);
 }
 
-void recoverSecret(DecryptionKey& key,
-                   Cw_t& Cw,
+void recoverSecret(DecryptionKey* key,
+                   Cw_t* Cw,
                    int* attributes, size_t attrs_len,
-                   element_s& Cs) {
+                   element_t Cs) {
    // Get attributes that can satisfy the policy (and their coefficients).
    element_t rootCoeff;
    element_init_Zr(rootCoeff, getPairing());
    element_set1(rootCoeff);
 
    int* sat1 = NULL;
-   element_s* sat2 = NULL;
+   element_t* sat2 = NULL;
    size_t sat_len = 0;
 
-   /**
-    * void Node::satisfyingAttributes(int** ret1, element_s** ret2, size_t* ret_len, int* attributes, size_t attrs_len,
-                        element_s& currentCoeff)
-    */
-
-   //key.accessPolicy.satisfyingAttributes(&sat1, &sat2, &sat_len, attributes, attrs_len, &rootCoeff);
-   key.accessPolicy.satisfyingAttributes(&sat1, &sat2, &sat_len, attributes, attrs_len, rootCoeff);
-   element_clear(rootCoeff);
+   key->accessPolicy.satisfyingAttributes(&sat1, &sat2, &sat_len, attributes, attrs_len, &rootCoeff);
+   //element_clear(rootCoeff);
 
    if(sat_len == 0) {
 	   printf("WARNING: policy not satisfied\n");
@@ -515,7 +510,7 @@ void recoverSecret(DecryptionKey& key,
    }
    
    element_t Zy;
-   element_init_G1(&Cs, getPairing());
+   element_init_G1(Cs, getPairing());
    element_init_G1(Zy, getPairing());
    bool pastFirst = false; // Is this the first "part" of the product
    
@@ -524,34 +519,34 @@ void recoverSecret(DecryptionKey& key,
    unsigned int i, j;
    for(i = 0; i < sat_len; i++) {
 	   element_t* attrDi;
-	   for(j = 0; j < key.Di_len; j++){
-		   if(key.Di1[j] == sat1[i]){
-			   attrDi = &key.Di2[j];
+	   for(j = 0; j < key->Di_len; j++){
+		   if(key->Di1[j] == sat1[i]){
+			   attrDi = &key->Di2[j];
 			   break;
 		   }
 	   }
-      element_mul(&sat2[i], *attrDi, &sat2[i]);
+      element_mul(sat2[i], *attrDi, sat2[i]);
 
       element_t* elem;
-      for(j = 0; j < Cw.len; j++){
-    	  if(Cw.index[j] == sat1[i]){
-    		  elem = &Cw.elem[j];
+      for(j = 0; j < Cw->len; j++){
+    	  if(Cw->index[j] == sat1[i]){
+    		  elem = &Cw->elem[j];
     		  break;
     	  }
       }
-      element_pow_zn(Zy, *elem, &sat2[i]);
+      element_pow_zn(Zy, *elem, sat2[i]);
    
       if (pastFirst) {
-         element_mul(&Cs, &Cs, Zy);
+         element_mul(Cs, Cs, Zy);
       } else {
          pastFirst = true;
-         element_set(&Cs, Zy);
+         element_set(Cs, Zy);
       }
    }
    
    free(sat1);
    for(i = 0; i < sat_len; i++){
-      element_clear(&sat2[i]);
+      element_clear(sat2[i]);
    }
    free(sat2);
    element_clear(Zy);
@@ -578,20 +573,20 @@ size_t encrypt(uint8_t** ct,
    return clength;
 }
 
-char* decrypt(DecryptionKey& key,
-                    Cw_t& Cw,
+char* decrypt(DecryptionKey* key,
+                    Cw_t* Cw,
                     int* attributes, size_t attrs_len,
                     uint8_t* ciphertext, size_t ct_len) {
-   element_s Cs;
+   element_t Cs;
    recoverSecret(key, Cw, attributes, attrs_len, Cs);
-   uint8_t* plaintext = (uint8_t*) malloc(ct_len);
+   uint8_t* plaintext = (uint8_t*) malloc(ct_len*sizeof(uint8_t));
    size_t plaintextLen = 0;
 
    uint8_t symKey[AES_KEY_SIZE];
-   hashElement(&Cs, symKey);
+   hashElement(Cs, symKey);
    symDecrypt(ciphertext, ct_len, symKey, plaintext, &plaintextLen);
 
-   element_clear(&Cs);
+   element_clear(Cs);
    
    return (char*) plaintext;
 }

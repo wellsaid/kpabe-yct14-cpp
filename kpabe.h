@@ -34,11 +34,15 @@ void* build_yao_policies(int* attr_univ, size_t num_attr, uint8_t policy);
 void yct14_setup(const int* attrs, unsigned int num_attrs,
 		void** pubParBuff, void** prvParBuff);
 
-void yct14_priv_free(void* prvParBuff);
-
 void* yct14_keygen(void* prvParBuff, void* accessPolicyBuff);
 
 size_t yct14_encrypt(uint8_t** ct, void* pubParBuff, const int* attributes, size_t attrs_len, char* message, void** CwBuff);
+
+char* yct14_decrypt(void* keyBuff, void* CwBuff, int* attributes, size_t attrs_len, uint8_t* ciphertext, size_t ct_len);
+
+void yct14_priv_free(void* prvParBuff);
+
+void yct14_pub_free(void* pubParBuff);
 
 #ifdef __cplusplus
 }
