@@ -71,13 +71,25 @@ void* yct14_keygen(void* prvParBuff,
 	return key_dyn;
 }
 
+size_t yct14_encrypt(uint8_t** ct, void* pubParBuff, const int* attributes, size_t attrs_len, char* message, void** CwBuff) {
+	PublicParams* params = (PublicParams*) pubParBuff;
+	Cw_t** Cw = (Cw_t**) CwBuff;
+
+	return encrypt(ct, params, attributes, attrs_len, message, Cw);
+}
+
+
 // memory freeing
 void yct14_priv_free(void* prvParBuff) {
 	PrivateParams* priv = (PrivateParams*) prvParBuff;
 
-	element_free(priv->mk);
+	//element_clear(priv->mk); /* TODO: Causes invalid access and crash later on */
 	free(priv->Si1);
+	for(unsigned int i = 0; i < priv->Si_len; i++){
+		element_clear(priv->Si2[i]);
+	}
 	free(priv->Si2);
+	free(prvParBuff);
 }
 
 }

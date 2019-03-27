@@ -360,9 +360,7 @@ void setup(const int* attributes, size_t attrs_len,
            PublicParams** publicParams,
            PrivateParams** privateParams) {
    *publicParams = (PublicParams*) malloc(sizeof(PublicParams));
-   //memset(*publicParams, 0, sizeof(PublicParams));
    *privateParams = (PrivateParams*) malloc(sizeof(PrivateParams));
-   //memset(*privateParams, 0, sizeof(PrivateParams));
    
    element_init_Zr((*privateParams)->mk, getPairing());
    element_random((*privateParams)->mk);
@@ -457,40 +455,36 @@ DecryptionKey keyGeneration(PrivateParams* privateParams, Node* accessPolicy) {
 		   privateParams->Si_len, element_div, accessPolicy);
 }
 
-Cw_t createSecret(PublicParams& params,
+void createSecret(Cw_t** Cw, PublicParams* params,
                  const int* attributes, size_t attrs_len,
-                 element_s& Cs) {
+                 element_t* Cs) {
    element_t k;
    element_init_Zr(k, getPairing());
    element_random(k);
+
+   element_init_G1(*Cs, getPairing());
+   element_pow_zn(*Cs, params->pk, k);
    
-   element_init_G1(&Cs, getPairing());
-   element_pow_zn(&Cs, params.pk, k);
-   
-   Cw_t Cw;
+   *Cw = (Cw_t*) malloc(sizeof(Cw_t));
+   (*Cw)->index = (int*) malloc(attrs_len*sizeof(int));
+   (*Cw)->elem = (element_t*) malloc(attrs_len*sizeof(element_t));
+   (*Cw)->len = attrs_len;
+
    unsigned int i, j;
    for(i = 0; i < attrs_len; i++) {
-      element_s* elem;
-      for(j = 0; j < Cw.len; j++){
-    	  if(Cw.index[j] == attributes[i]){
-    		  elem = &Cw.elem[j];
-    		  break;
-    	  }
-      }
-      element_init_G1(elem, getPairing());
+      (*Cw)->index[i] = attributes[i];
+      element_init_G1((*Cw)->elem[i], getPairing());
 
       element_t* param;
-      for(j = 0; j < params.Pi_len; j++){
-    	  if(params.Pi1[j] == attributes[i]){
-    		  param = &params.Pi2[j];
+      for(j = 0; j < params->Pi_len; j++){
+    	  if(params->Pi1[j] == attributes[i]){
+    		  param = &params->Pi2[j];
     		  break;
     	  }
       }
-      element_pow_zn(elem, *param, k);
+      element_pow_zn((*Cw)->elem[i], *param, k);
    }
    element_clear(k);
-   
-   return Cw;
 }
 
 void recoverSecret(DecryptionKey& key,
@@ -538,14 +532,14 @@ void recoverSecret(DecryptionKey& key,
 	   }
       element_mul(&sat2[i], *attrDi, &sat2[i]);
 
-      element_s* elem;
+      element_t* elem;
       for(j = 0; j < Cw.len; j++){
     	  if(Cw.index[j] == sat1[i]){
     		  elem = &Cw.elem[j];
     		  break;
     	  }
       }
-      element_pow_zn(Zy, elem, &sat2[i]);
+      element_pow_zn(Zy, *elem, &sat2[i]);
    
       if (pastFirst) {
          element_mul(&Cs, &Cs, Zy);
@@ -564,10 +558,10 @@ void recoverSecret(DecryptionKey& key,
 }
 
 size_t encrypt(uint8_t** ct,
-		PublicParams& params, const int* attributes, size_t attrs_len,
-		char* message, Cw_t& Cw) {
-   element_s Cs;
-   Cw = createSecret(params, attributes, attrs_len, Cs);
+		PublicParams* params, const int* attributes, size_t attrs_len,
+		char* message, Cw_t** Cw) {
+   element_t Cs;
+   createSecret(Cw, params, attributes, attrs_len, &Cs);
    
    // Use the key to encrypt the data using a symmetric cipher.
    size_t messageLen = strlen(message) + 1; // account for terminating byte
@@ -575,11 +569,11 @@ size_t encrypt(uint8_t** ct,
    *ct = (uint8_t*) malloc(cipherMaxLen*sizeof(uint8_t));
    
    uint8_t key[AES_KEY_SIZE];
-   hashElement(&Cs, key);
+   hashElement(Cs, key);
    size_t clength = 0;
    symEncrypt((uint8_t*) message, messageLen, key, *ct, &clength);
 
-   element_clear(&Cs);
+   element_clear(Cs);
    
    return clength;
 }

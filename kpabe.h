@@ -38,6 +38,8 @@ void yct14_priv_free(void* prvParBuff);
 
 void* yct14_keygen(void* prvParBuff, void* accessPolicyBuff);
 
+size_t yct14_encrypt(uint8_t** ct, void* pubParBuff, const int* attributes, size_t attrs_len, char* message, void** CwBuff);
+
 #ifdef __cplusplus
 }
 #endif

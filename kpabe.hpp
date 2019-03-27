@@ -126,7 +126,7 @@ typedef struct {
 
 typedef struct {
 	int* index;
-	element_s* elem;
+	element_t* elem;
 	size_t len;
 } Cw_t;
 
@@ -150,9 +150,9 @@ DecryptionKey keyGeneration(PrivateParams* privateParams, Node* accessPolicy);
  * This is the Encryption algorithm, but without deriving a key and encryption.
  * Ciphertext C will hold the decryption parameters, the secret is Cs.
  */
-Cw_t createSecret(PublicParams& params,
+Cw_t createSecret(PublicParams* params,
                  const int* attributes, size_t attrs_len,
-                 element_s& Cs);
+                 element_t* Cs);
 
 /**
  * @brief Recovers a KP-ABE secret using the decryption key and decryption parameters.
@@ -168,8 +168,8 @@ void recoverSecret(DecryptionKey& key,
  * This is the actual Encryption algorithm, but without a HMAC.
  */
 size_t encrypt(uint8_t** ct,
-		PublicParams& params, const int* attributes, size_t attrs_len,
-		char* message, Cw_t& Cw);
+		PublicParams* params, const int* attributes, size_t attrs_len,
+		char* message, Cw_t** Cw);
 
 /**
  * @brief Decrypts an attribute-encrypted message.
