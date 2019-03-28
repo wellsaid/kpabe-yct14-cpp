@@ -3,6 +3,7 @@
 #if defined(CONTIKI_TARGET_ZOUL)
 extern "C" { // C "headers" coming
 #include <dev/cbc.h>
+#include <dev/sha256.h>
 }
 #else
 #include <mbedtls/cipher.h>
@@ -30,13 +31,36 @@ pairing_ptr getPairing() {
    return &pairing;
 }
 
-void hashElement(element_t e, uint8_t* hashBuf, size_t hashBufLen) {
-   const int elementSize = element_length_in_bytes(e);
-   uint8_t* elementBytes = (uint8_t*) malloc(elementSize + 1);
-   element_to_bytes(elementBytes, e);
+void hashElement(element_t* e, uint8_t* hashBuf) {
+	char tmp[512];
+	element_snprintf(tmp, 512, "[hashElement] e=%B\n", e); /* TODO: if you remove this it crashes ... */
+	//printf(tmp);
+
+	int elementSize = element_length_in_bytes(*e);
+	uint8_t* elementBytes = (uint8_t*) malloc(elementSize + 1);
+	element_to_bytes(elementBytes, *e);
 
 #if defined(CONTIKI_TARGET_ZOUL)
-   memset(hashBuf, 0, hashBufLen);
+   uint8_t ret;
+   crypto_init();
+
+   sha256_state_t state;
+   if( (ret = sha256_init(&state)) != CRYPTO_SUCCESS ){
+   	printf("ERROR: initializing sha256 structure (error: %u)", ret);
+   	exit(1);
+   }
+
+   if( (ret = sha256_process(&state, elementBytes, elementSize+1)) != CRYPTO_SUCCESS){
+   	printf("ERROR: performing sha256 operation (error: %u)", ret);
+   	exit(1);
+   }
+
+   if( (ret = sha256_done(&state, hashBuf)) != CRYPTO_SUCCESS){
+   	printf("ERROR: getting result of sha256 operation (error: %u)", ret);
+   	exit(1);
+   }
+
+   crypto_disable();
 #else
    const mbedtls_md_info_t* mdInfo = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
    mbedtls_md(mdInfo, elementBytes, elementSize, hashBuf);
@@ -56,20 +80,18 @@ void mbedtlsSymCrypt(const uint8_t* input, size_t ilen, uint8_t* key, uint8_t* o
    mbedtls_cipher_context_t ctx;
    mbedtls_cipher_setup(&ctx, cipherInfo);
    mbedtls_cipher_setkey(&ctx, key, cipherInfo->key_bitlen, mode);
-   uint8_t iv[16];
-   memset(iv, 0, 16);
+   uint8_t iv[AES_BLOCK_SIZE];
+   memset(iv, 0, AES_BLOCK_SIZE);
    mbedtls_cipher_crypt(&ctx, iv, cipherInfo->iv_size, input, ilen, output, olen);
 }
 #endif
 
-static void byte_array_to_str(char* dest, char* array, size_t array_len){
+static void printf_byte_array(char* array, size_t array_len){
 	size_t i;
-	dest[0] = '\0';
 
-	char tmp[3];
 	for( i = 0; i < array_len; i++){
-	    sprintf(tmp, "%02X", (uint8_t) array[i]);
-	    strcat(dest, tmp);
+	    printf("%02X", (uint8_t) array[i]);
+	    fflush(stdout);
 	}
 }
 
@@ -86,20 +108,10 @@ void symEncrypt(const uint8_t* input, size_t ilen, uint8_t* key, uint8_t* output
 	ifinal[3] = (ilen & 0xff)>>0;
 	memcpy(ifinal + 4, input, ilen);
 
-	crypto_init();
+	unsigned char iv[AES_BLOCK_SIZE];
+	memset(iv, 0, AES_BLOCK_SIZE);
 
-	char* b_str = (char*) malloc(2*ilen+1);
-	byte_array_to_str(b_str, (char*) input, ilen);
-	printf("[symEncrypt] input=%s\n", b_str);
-	free(b_str);
-	b_str = (char*) malloc(2*ifinal_len+1);
-	byte_array_to_str(b_str, (char*) ifinal, ifinal_len);
-	printf("             ifinal=%s\n", b_str);
-	free(b_str);
-	b_str = (char*) malloc(2*32 + 1);
-	byte_array_to_str(b_str, (char*) key, 32);
-	printf("             key=%s\n", b_str);
-	free(b_str);
+	crypto_init();
 
 	uint8_t ret;
 	if( (ret = aes_load_keys((char*) key, AES_KEY_STORE_SIZE_KEY_SIZE_256, 1, 0)) != CRYPTO_SUCCESS){
@@ -107,20 +119,10 @@ void symEncrypt(const uint8_t* input, size_t ilen, uint8_t* key, uint8_t* output
 		exit(1);
 	}
 
-	unsigned char iv[CBC_IV_LEN];
-	memset(iv, 0, CBC_IV_LEN);
-
-	if( (ret = cbc_crypt_start(1, 0, iv, (char*) ifinal, (char*) output, ifinal_len, NULL)) != CRYPTO_SUCCESS){
+	if( (ret = cbc_crypt_start(1, 0, iv, ifinal, (char*) output, ifinal_len, NULL)) != CRYPTO_SUCCESS){
 		printf("ERROR: starting cbc operation (error: %d)\n", ret);
 		exit(1);
 	}
-	free(ifinal);
-	*olen = ifinal_len;
-
-	b_str = (char*) malloc(2*(*olen)+1);
-	byte_array_to_str(b_str, (char*) output, *olen);
-	printf("             output=%s\n", b_str);
-	free(b_str);
 
 	do {
 		ret = cbc_crypt_check_status();
@@ -133,6 +135,10 @@ void symEncrypt(const uint8_t* input, size_t ilen, uint8_t* key, uint8_t* output
 	}
 
 	crypto_disable();
+
+	free(ifinal);
+	*olen = ifinal_len;
+
 #else
    mbedtlsSymCrypt(input, ilen, key, output, olen, MBEDTLS_ENCRYPT);
 #endif
@@ -140,16 +146,12 @@ void symEncrypt(const uint8_t* input, size_t ilen, uint8_t* key, uint8_t* output
 
 void symDecrypt(const uint8_t* input, size_t ilen, uint8_t* key, uint8_t** output, size_t* olen) {
 #if defined(CONTIKI_TARGET_ZOUL)
-	crypto_init();
+	unsigned char iv[AES_BLOCK_SIZE];
+	memset(iv, 0, AES_BLOCK_SIZE);
 
-	char* b_str = (char*) malloc(2*ilen+1);
-	byte_array_to_str(b_str, (char*) input, ilen);
-	printf("[symDecrypt] input=%s\n", b_str);
-	free(b_str);
-	b_str = (char*) malloc(2*32 + 1);
-	byte_array_to_str(b_str, (char*) key, 32);
-	printf("             key=%s\n", b_str);
-	free(b_str);
+	char* ofinal = (char*) malloc(ilen);
+
+	crypto_init();
 
 	uint8_t ret;
 	if( (ret = aes_load_keys((char*) key, AES_KEY_STORE_SIZE_KEY_SIZE_256, 1, 0)) != CRYPTO_SUCCESS){
@@ -157,18 +159,22 @@ void symDecrypt(const uint8_t* input, size_t ilen, uint8_t* key, uint8_t** outpu
 		exit(1);
 	}
 
-	unsigned char iv[CBC_IV_LEN];
-	memset(iv, 0, CBC_IV_LEN);
-
-	char* ofinal = (char*) malloc(ilen);
-	if( (ret = cbc_crypt_start(0, 0, iv, input, ofinal, ilen, NULL)) != CRYPTO_SUCCESS){
+	if( (ret = cbc_crypt_start(0, 0, iv, (char*) input, ofinal, ilen, NULL)) != CRYPTO_SUCCESS){
 		printf("ERROR: starting cbc operation (error: %d)\n", ret);
 		exit(1);
 	}
-	b_str = (char*) malloc(2*ilen+1);
-	byte_array_to_str(b_str, (char*) ofinal, ilen);
-	printf("             ofinal=%s\n", b_str);
-	free(b_str);
+
+	do {
+		ret = cbc_crypt_check_status();
+	} while(ret == -1 || ret == 255);
+	/* otherwise continues with error 255 */
+
+	if( ret != CRYPTO_SUCCESS ){
+		printf("ERROR: performing cbc operation (error: %d)\n", ret);
+		exit(1);
+	}
+
+	crypto_disable();
 
 	/* get real length */
 	*olen = 0;
@@ -181,24 +187,9 @@ void symDecrypt(const uint8_t* input, size_t ilen, uint8_t* key, uint8_t** outpu
 	memcpy(*output, ofinal + 4, *olen);
 	free(ofinal);
 
-	b_str = (char*) malloc(2*(*olen)+1);
-	byte_array_to_str(b_str, (char*) *output, *olen);
-	printf("             output=%s\n", b_str);
-	free(b_str);
-
-	do {
-		ret = cbc_crypt_check_status();
-	} while(ret == -1 || ret == 255);
-	/* otherwise continues with error 255 */
-
-	if( ret != CRYPTO_SUCCESS ){
-		printf("ERROR: performing cbc operation (error: %d)\n", ret);
-		exit(1);
-	}
-
 	crypto_disable();
 #else
-   mbedtlsSymCrypt(input, ilen, key, output, olen, MBEDTLS_DECRYPT);
+   mbedtlsSymCrypt(input, ilen, key, *output, olen, MBEDTLS_DECRYPT);
 #endif
 }
 
@@ -279,11 +270,11 @@ void Node::getLeafs(int** attrs, size_t* attrs_len) const {
 			   if(*attrs_len > 0){
 				   memcpy(tmp, *attrs, *attrs_len*sizeof(int));
 			   }
-			   tmp[*attrs_len] = attr;
+			   tmp[*attrs_len] = children[i].attr;
 
 			   free(*attrs);
 			   *attrs = tmp;
-			   *attrs_len++;
+			   (*attrs_len)++;
 		   } else {
 			   children[i].getLeafs(attrs, attrs_len);
 		   }
@@ -304,15 +295,15 @@ size_t Node::splitShares(element_t** shares, element_t rootSecret) {
 
 	// Generate the coefficients for the polynomial.
 	unsigned int threshold = getThreshold();
-	element_s* coeff = (element_s*) malloc(threshold*sizeof(element_s*));
+	element_t* coeff = (element_t*) malloc(threshold*sizeof(element_t));
    
-	element_init_same_as(&coeff[0], rootSecret);
-	element_set(&coeff[0], rootSecret);
+	element_init_same_as(coeff[0], rootSecret);
+	element_set(coeff[0], rootSecret);
    
 	// Generate random coefficients, except for q(0), which is set to the rootSecret.
 	for(int i = 1; i <= getPolyDegree(); ++i) {
-		element_init_same_as(&coeff[i], rootSecret);
-		element_random(&coeff[i]);
+		element_init_same_as(coeff[i], rootSecret);
+		element_random(coeff[i]);
 	}
 
 	// Calculate the shares for each child.
@@ -324,20 +315,20 @@ size_t Node::splitShares(element_t** shares, element_t rootSecret) {
    // The scheme decription defines an ordering on the children in a node (index(x)).
    // Here, we implicitly use a left to right order.
    for(x = 1; x <= children_len; ++x) {
-      element_t* share = &*shares[x - 1];
+      element_t* share = &((*shares)[x - 1]);
       element_init_same_as(*share, rootSecret);
       element_set0(*share);
       // share = coeff[0] + coeff[1] * x + ... + coeff[threshold - 1] * x ^ (threshold - 1)
       for(int power = 0; power < threshold; ++power) {
          element_set_si(temp, pow(x, power)); //TODO: handle pow
-         element_mul(temp, temp, &coeff[power]);
+         element_mul(temp, temp, coeff[power]);
          element_add(*share, *share, temp);
       }
    }
    
    element_clear(temp);
    for(x = 0; x < threshold; x++) {
-      element_clear(&coeff[x]);
+      element_clear(coeff[x]);
    }
    free(coeff);
    
@@ -379,7 +370,7 @@ size_t Node::recoverCoefficients(element_t** coeff) {
    
 	for(int i = 1; i <= threshold; ++i) {
 		element_set_si(iVal, i);
-		element_t* result = coeff[i - 1];
+		element_t* result = &(*coeff)[i - 1];
 		element_init_Zr(*result, getPairing());
 		element_set1(*result);
 		for(int j = 1; j <= threshold; ++j) {
@@ -617,7 +608,7 @@ void createSecret(Cw_t** Cw, PublicParams* params,
 void recoverSecret(DecryptionKey* key,
                    Cw_t* Cw,
                    int* attributes, size_t attrs_len,
-                   element_t Cs) {
+                   element_t* Cs) {
    // Get attributes that can satisfy the policy (and their coefficients).
    element_t rootCoeff;
    element_init_Zr(rootCoeff, getPairing());
@@ -636,7 +627,7 @@ void recoverSecret(DecryptionKey* key,
    }
    
    element_t Zy;
-   element_init_G1(Cs, getPairing());
+   element_init_G1(*Cs, getPairing());
    element_init_G1(Zy, getPairing());
    bool pastFirst = false; // Is this the first "part" of the product
    
@@ -663,10 +654,10 @@ void recoverSecret(DecryptionKey* key,
       element_pow_zn(Zy, *elem, sat2[i]);
    
       if (pastFirst) {
-         element_mul(Cs, Cs, Zy);
+         element_mul(*Cs, *Cs, Zy);
       } else {
          pastFirst = true;
-         element_set(Cs, Zy);
+         element_set(*Cs, Zy);
       }
    }
    
@@ -689,14 +680,14 @@ size_t encrypt(uint8_t** ct,
    size_t cipherMaxLen = 4 + messageLen;
    cipherMaxLen += (32 - ((int) cipherMaxLen % 32));
    *ct = (uint8_t*) malloc(cipherMaxLen*sizeof(uint8_t));
-   
+
    uint8_t key[AES_KEY_SIZE];
-   hashElement(Cs, key, AES_KEY_SIZE);
+   hashElement(&Cs, key);
+   element_clear(Cs);
+
    size_t clength = 0;
    symEncrypt((uint8_t*) message, messageLen, key, *ct, &clength);
 
-   element_clear(Cs);
-   
    return clength;
 }
 
@@ -705,15 +696,20 @@ char* decrypt(DecryptionKey* key,
                     int* attributes, size_t attrs_len,
                     uint8_t* ciphertext, size_t ct_len) {
    element_t Cs;
-   recoverSecret(key, Cw, attributes, attrs_len, Cs);
-   uint8_t* plaintext = NULL;
-   size_t plaintextLen = 0;
+   recoverSecret(key, Cw, attributes, attrs_len, &Cs);
 
    uint8_t symKey[AES_KEY_SIZE];
-   hashElement(Cs, symKey, AES_KEY_SIZE);
-   symDecrypt(ciphertext, ct_len, symKey, &plaintext, &plaintextLen);
-
+   hashElement(&Cs, symKey);
    element_clear(Cs);
+
+   uint8_t* plaintext =
+#if defined(CONTIKI_TARGET_ZOUL)
+		   NULL;
+#else
+   	   	   (uint8_t*) malloc(ct_len);
+#endif
+   size_t plaintextLen = 0;
+   symDecrypt(ciphertext, ct_len, symKey, &plaintext, &plaintextLen);
    
    return (char*) plaintext;
 }

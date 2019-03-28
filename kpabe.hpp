@@ -160,7 +160,7 @@ Cw_t createSecret(PublicParams* params,
 void recoverSecret(DecryptionKey* key,
                    Cw_t* Cw,
                    int* attributes, size_t attrs_len,
-                   element_t Cs);
+                   element_t* Cs);
 
 /**
  * @brief Encrypts a message under a given attribute set.
