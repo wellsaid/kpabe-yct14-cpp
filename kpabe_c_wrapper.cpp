@@ -85,7 +85,7 @@ char* yct14_decrypt(void* keyBuff,
 	DecryptionKey* key = (DecryptionKey*) keyBuff;
 	Cw_t* Cw = (Cw_t*) CwBuff;
 
-	decrypt(key, Cw, attributes, attrs_len, ciphertext, ct_len);
+	return decrypt(key, Cw, attributes, attrs_len, ciphertext, ct_len);
 }
 
 // memory freeing

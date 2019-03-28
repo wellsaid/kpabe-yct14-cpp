@@ -1,7 +1,9 @@
 #include <string.h>
 #include <math.h>
-
 #if defined(CONTIKI_TARGET_ZOUL)
+extern "C" { // C "headers" coming
+#include <dev/cbc.h>
+}
 #else
 #include <mbedtls/cipher.h>
 #include <mbedtls/md.h>
@@ -60,9 +62,77 @@ void mbedtlsSymCrypt(const uint8_t* input, size_t ilen, uint8_t* key, uint8_t* o
 }
 #endif
 
+static void byte_array_to_str(char* dest, char* array, size_t array_len){
+	size_t i;
+	dest[0] = '\0';
+
+	char tmp[3];
+	for( i = 0; i < array_len; i++){
+	    sprintf(tmp, "%02X", (uint8_t) array[i]);
+	    strcat(dest, tmp);
+	}
+}
+
 void symEncrypt(const uint8_t* input, size_t ilen, uint8_t* key, uint8_t* output, size_t* olen) {
 #if defined(CONTIKI_TARGET_ZOUL)
-	/* TODO */
+	/* stuff in real length (big endian) before padding */
+	size_t ifinal_len = 4 + ilen;
+	ifinal_len += (32 - ((int) ifinal_len % 32));
+	char* ifinal = (char*) calloc(ifinal_len, sizeof(char));
+
+	ifinal[0] = (ilen & 0xff000000)>>24;
+	ifinal[1] = (ilen & 0xff0000)>>16;
+	ifinal[2] = (ilen & 0xff00)>>8;
+	ifinal[3] = (ilen & 0xff)>>0;
+	memcpy(ifinal + 4, input, ilen);
+
+	crypto_init();
+
+	char* b_str = (char*) malloc(2*ilen+1);
+	byte_array_to_str(b_str, (char*) input, ilen);
+	printf("[symEncrypt] input=%s\n", b_str);
+	free(b_str);
+	b_str = (char*) malloc(2*ifinal_len+1);
+	byte_array_to_str(b_str, (char*) ifinal, ifinal_len);
+	printf("             ifinal=%s\n", b_str);
+	free(b_str);
+	b_str = (char*) malloc(2*32 + 1);
+	byte_array_to_str(b_str, (char*) key, 32);
+	printf("             key=%s\n", b_str);
+	free(b_str);
+
+	uint8_t ret;
+	if( (ret = aes_load_keys((char*) key, AES_KEY_STORE_SIZE_KEY_SIZE_256, 1, 0)) != CRYPTO_SUCCESS){
+		printf("ERROR: loading keys (error: %d)\n", ret);
+		exit(1);
+	}
+
+	unsigned char iv[CBC_IV_LEN];
+	memset(iv, 0, CBC_IV_LEN);
+
+	if( (ret = cbc_crypt_start(1, 0, iv, (char*) ifinal, (char*) output, ifinal_len, NULL)) != CRYPTO_SUCCESS){
+		printf("ERROR: starting cbc operation (error: %d)\n", ret);
+		exit(1);
+	}
+	free(ifinal);
+	*olen = ifinal_len;
+
+	b_str = (char*) malloc(2*(*olen)+1);
+	byte_array_to_str(b_str, (char*) output, *olen);
+	printf("             output=%s\n", b_str);
+	free(b_str);
+
+	do {
+		ret = cbc_crypt_check_status();
+	} while(ret == -1 || ret == 255);
+	/* otherwise continues with error 255 */
+
+	if( ret != CRYPTO_SUCCESS ){
+		printf("ERROR: performing cbc operation (error: %d)\n", ret);
+		exit(1);
+	}
+
+	crypto_disable();
 #else
    mbedtlsSymCrypt(input, ilen, key, output, olen, MBEDTLS_ENCRYPT);
 #endif
@@ -560,7 +630,8 @@ size_t encrypt(uint8_t** ct,
    
    // Use the key to encrypt the data using a symmetric cipher.
    size_t messageLen = strlen(message) + 1; // account for terminating byte
-   size_t cipherMaxLen = messageLen + AES_BLOCK_SIZE;
+   size_t cipherMaxLen = 4 + messageLen;
+   cipherMaxLen += (32 - ((int) cipherMaxLen % 32));
    *ct = (uint8_t*) malloc(cipherMaxLen*sizeof(uint8_t));
    
    uint8_t key[AES_KEY_SIZE];
