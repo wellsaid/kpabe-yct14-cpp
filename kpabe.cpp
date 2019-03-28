@@ -30,13 +30,13 @@ pairing_ptr getPairing() {
    return &pairing;
 }
 
-void hashElement(element_t e, uint8_t* hashBuf) {
+void hashElement(element_t e, uint8_t* hashBuf, size_t hashBufLen) {
    const int elementSize = element_length_in_bytes(e);
    uint8_t* elementBytes = (uint8_t*) malloc(elementSize + 1);
    element_to_bytes(elementBytes, e);
 
 #if defined(CONTIKI_TARGET_ZOUL)
-   /* TODO */
+   memset(hashBuf, 0, hashBufLen);
 #else
    const mbedtls_md_info_t* mdInfo = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
    mbedtls_md(mdInfo, elementBytes, elementSize, hashBuf);
@@ -138,9 +138,65 @@ void symEncrypt(const uint8_t* input, size_t ilen, uint8_t* key, uint8_t* output
 #endif
 }
 
-void symDecrypt(const uint8_t* input, size_t ilen, uint8_t* key, uint8_t* output, size_t* olen) {
+void symDecrypt(const uint8_t* input, size_t ilen, uint8_t* key, uint8_t** output, size_t* olen) {
 #if defined(CONTIKI_TARGET_ZOUL)
-	/* TODO */
+	crypto_init();
+
+	char* b_str = (char*) malloc(2*ilen+1);
+	byte_array_to_str(b_str, (char*) input, ilen);
+	printf("[symDecrypt] input=%s\n", b_str);
+	free(b_str);
+	b_str = (char*) malloc(2*32 + 1);
+	byte_array_to_str(b_str, (char*) key, 32);
+	printf("             key=%s\n", b_str);
+	free(b_str);
+
+	uint8_t ret;
+	if( (ret = aes_load_keys((char*) key, AES_KEY_STORE_SIZE_KEY_SIZE_256, 1, 0)) != CRYPTO_SUCCESS){
+		printf("ERROR: loading keys (error: %d)\n", ret);
+		exit(1);
+	}
+
+	unsigned char iv[CBC_IV_LEN];
+	memset(iv, 0, CBC_IV_LEN);
+
+	char* ofinal = (char*) malloc(ilen);
+	if( (ret = cbc_crypt_start(0, 0, iv, input, ofinal, ilen, NULL)) != CRYPTO_SUCCESS){
+		printf("ERROR: starting cbc operation (error: %d)\n", ret);
+		exit(1);
+	}
+	b_str = (char*) malloc(2*ilen+1);
+	byte_array_to_str(b_str, (char*) ofinal, ilen);
+	printf("             ofinal=%s\n", b_str);
+	free(b_str);
+
+	/* get real length */
+	*olen = 0;
+	*olen = *olen
+	    | ((ofinal[0])<<24) | ((ofinal[1])<<16)
+	    | ((ofinal[2])<<8)  | ((ofinal[3])<<0);
+
+	/* truncate any garbage from the padding */
+	*output = (uint8_t*) malloc(*olen);
+	memcpy(*output, ofinal + 4, *olen);
+	free(ofinal);
+
+	b_str = (char*) malloc(2*(*olen)+1);
+	byte_array_to_str(b_str, (char*) *output, *olen);
+	printf("             output=%s\n", b_str);
+	free(b_str);
+
+	do {
+		ret = cbc_crypt_check_status();
+	} while(ret == -1 || ret == 255);
+	/* otherwise continues with error 255 */
+
+	if( ret != CRYPTO_SUCCESS ){
+		printf("ERROR: performing cbc operation (error: %d)\n", ret);
+		exit(1);
+	}
+
+	crypto_disable();
 #else
    mbedtlsSymCrypt(input, ilen, key, output, olen, MBEDTLS_DECRYPT);
 #endif
@@ -635,7 +691,7 @@ size_t encrypt(uint8_t** ct,
    *ct = (uint8_t*) malloc(cipherMaxLen*sizeof(uint8_t));
    
    uint8_t key[AES_KEY_SIZE];
-   hashElement(Cs, key);
+   hashElement(Cs, key, AES_KEY_SIZE);
    size_t clength = 0;
    symEncrypt((uint8_t*) message, messageLen, key, *ct, &clength);
 
@@ -650,12 +706,12 @@ char* decrypt(DecryptionKey* key,
                     uint8_t* ciphertext, size_t ct_len) {
    element_t Cs;
    recoverSecret(key, Cw, attributes, attrs_len, Cs);
-   uint8_t* plaintext = (uint8_t*) malloc(ct_len*sizeof(uint8_t));
+   uint8_t* plaintext = NULL;
    size_t plaintextLen = 0;
 
    uint8_t symKey[AES_KEY_SIZE];
-   hashElement(Cs, symKey);
-   symDecrypt(ciphertext, ct_len, symKey, plaintext, &plaintextLen);
+   hashElement(Cs, symKey, AES_KEY_SIZE);
+   symDecrypt(ciphertext, ct_len, symKey, &plaintext, &plaintextLen);
 
    element_clear(Cs);
    
