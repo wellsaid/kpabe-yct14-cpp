@@ -41,12 +41,8 @@ pairing_ptr getPairing() {
 }
 
 void hashElement(element_t* e, uint8_t* hashBuf) {
-//	char tmp[512];
-//	element_snprintf(tmp, 512, "[hashElement] e=%B\n", *e);
-//	printf(tmp);
-
 	int elementSize = element_length_in_bytes(*e);
-	uint8_t* elementBytes = (uint8_t*) malloc(elementSize + 1);
+	uint8_t* elementBytes = (uint8_t*) malloc(elementSize);
 	element_to_bytes(elementBytes, *e);
 
 #if defined(CONTIKI_TARGET_ZOUL)
@@ -59,7 +55,7 @@ void hashElement(element_t* e, uint8_t* hashBuf) {
    	exit(1);
    }
 
-   if( (ret = sha256_process(&state, elementBytes, elementSize+1)) != CRYPTO_SUCCESS){
+   if( (ret = sha256_process(&state, elementBytes, elementSize)) != CRYPTO_SUCCESS){
    	printf("ERROR: performing sha256 operation (error: %u)", ret);
    	exit(1);
    }
@@ -70,10 +66,6 @@ void hashElement(element_t* e, uint8_t* hashBuf) {
    }
 
    crypto_disable();
-
-   printf("[hashElement] hashBuf=");
-   printf_byte_array((char*) hashBuf, AES_KEY_SIZE);
-   printf("\n");
 #else
    const mbedtls_md_info_t* mdInfo = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
    mbedtls_md(mdInfo, elementBytes, elementSize, hashBuf);
@@ -117,7 +109,7 @@ void symEncrypt(const uint8_t* input, size_t ilen, uint8_t* key, uint8_t* output
 
 	crypto_init();
 
-	uint8_t ret;
+	int8_t ret;
 	if( (ret = aes_load_keys((char*) key, AES_KEY_STORE_SIZE_KEY_SIZE_256, 1, 0)) != CRYPTO_SUCCESS){
 		printf("ERROR: loading keys (error: %d)\n", ret);
 		exit(1);
@@ -130,7 +122,7 @@ void symEncrypt(const uint8_t* input, size_t ilen, uint8_t* key, uint8_t* output
 
 	do {
 		ret = cbc_crypt_check_status();
-	} while(ret == -1 || ret == 255);
+	} while(ret == CRYPTO_PENDING);
 	/* otherwise continues with error 255 */
 
 	if( ret != CRYPTO_SUCCESS ){
@@ -157,7 +149,7 @@ void symDecrypt(const uint8_t* input, size_t ilen, uint8_t* key, uint8_t** outpu
 
 	crypto_init();
 
-	uint8_t ret;
+	int8_t ret;
 	if( (ret = aes_load_keys((char*) key, AES_KEY_STORE_SIZE_KEY_SIZE_256, 1, 0)) != CRYPTO_SUCCESS){
 		printf("ERROR: loading keys (error: %d)\n", ret);
 		exit(1);
@@ -170,7 +162,7 @@ void symDecrypt(const uint8_t* input, size_t ilen, uint8_t* key, uint8_t** outpu
 
 	do {
 		ret = cbc_crypt_check_status();
-	} while(ret == -1 || ret == 255);
+	} while(ret == CRYPTO_PENDING);
 	/* otherwise continues with error 255 */
 
 	if( ret != CRYPTO_SUCCESS ){
