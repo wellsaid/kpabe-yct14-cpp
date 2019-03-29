@@ -92,7 +92,7 @@ char* yct14_decrypt(void* keyBuff,
 void yct14_priv_free(void* prvParBuff) {
 	PrivateParams* priv = (PrivateParams*) prvParBuff;
 
-	//element_clear(priv->mk); /* TODO: Causes invalid access and crash later on */
+	element_clear(priv->mk); /* TODO: Causes invalid access and crash later on */
 	free(priv->Si1);
 	for(unsigned int i = 0; i < priv->Si_len; i++){
 		element_clear(priv->Si2[i]);
@@ -110,6 +110,36 @@ void yct14_pub_free(void* pubParBuff) {
 			element_clear(pub->Pi2[i]);
 	}
 	free(pub->Pi2);
+}
+
+void policy_free(Node* policy) {
+	Node* children;
+	unsigned int num_children = policy->getChildren(&children);
+
+	for(unsigned int i = 0; i < num_children; i++){
+		policy_free(&children[i]);
+	}
+	free(children);
+}
+
+void yct14_priv_key_free(void* prvKeyBuff){
+	DecryptionKey* prvKey = (DecryptionKey*) prvKeyBuff;
+
+	free(prvKey->Di1);
+	for(unsigned int i =0; i < prvKey->Di_len; i++){
+		element_clear(prvKey->Di2[i]);
+	}
+	free(prvKey->Di2);
+	policy_free(prvKey->accessPolicy);
+}
+
+void yct14_cw_free(void* cwBuff){
+	Cw_t* cw = (Cw_t*) cwBuff;
+	for(unsigned int i =0; i < cw->len; i++){
+		element_clear(cw->elem[i]);
+	}
+	free(cw->elem);
+	free(cw->index);
 }
 
 }

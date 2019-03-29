@@ -41,8 +41,9 @@ size_t yct14_encrypt(uint8_t** ct, void* pubParBuff, const int* attributes, size
 char* yct14_decrypt(void* keyBuff, void* CwBuff, int* attributes, size_t attrs_len, uint8_t* ciphertext, size_t ct_len);
 
 void yct14_priv_free(void* prvParBuff);
-
 void yct14_pub_free(void* pubParBuff);
+void yct14_priv_key_free(void* prvKeyBuff);
+void yct14_cw_free(void* cwBuff);
 
 #ifdef __cplusplus
 }

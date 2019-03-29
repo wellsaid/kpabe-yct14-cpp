@@ -99,13 +99,13 @@ public:
 class DecryptionKey {
 
 public:
-   Node accessPolicy;
+   Node* accessPolicy;
    int* Di1;
    element_t* Di2;
    size_t Di_len;
 
+   DecryptionKey(Node* policy);
    DecryptionKey(const DecryptionKey& other);
-   DecryptionKey(const Node& policy);
 
    DecryptionKey& operator=(DecryptionKey other);
 };

@@ -15,6 +15,15 @@ extern "C" { // C "headers" coming
 
 using namespace std;
 
+static void printf_byte_array(char* array, size_t array_len){
+	size_t i;
+
+	for( i = 0; i < array_len; i++){
+	    printf("%02X", (uint8_t) array[i]);
+	    fflush(stdout);
+	}
+}
+
 // For the encrypt/decrypt methods.
 static const size_t AES_BLOCK_SIZE = 16;
 static const size_t AES_KEY_SIZE = 32;
@@ -32,9 +41,9 @@ pairing_ptr getPairing() {
 }
 
 void hashElement(element_t* e, uint8_t* hashBuf) {
-	char tmp[512];
-	element_snprintf(tmp, 512, "[hashElement] e=%B\n", e); /* TODO: if you remove this it crashes ... */
-	//printf(tmp);
+//	char tmp[512];
+//	element_snprintf(tmp, 512, "[hashElement] e=%B\n", *e);
+//	printf(tmp);
 
 	int elementSize = element_length_in_bytes(*e);
 	uint8_t* elementBytes = (uint8_t*) malloc(elementSize + 1);
@@ -61,6 +70,10 @@ void hashElement(element_t* e, uint8_t* hashBuf) {
    }
 
    crypto_disable();
+
+   printf("[hashElement] hashBuf=");
+   printf_byte_array((char*) hashBuf, AES_KEY_SIZE);
+   printf("\n");
 #else
    const mbedtls_md_info_t* mdInfo = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
    mbedtls_md(mdInfo, elementBytes, elementSize, hashBuf);
@@ -85,15 +98,6 @@ void mbedtlsSymCrypt(const uint8_t* input, size_t ilen, uint8_t* key, uint8_t* o
    mbedtls_cipher_crypt(&ctx, iv, cipherInfo->iv_size, input, ilen, output, olen);
 }
 #endif
-
-static void printf_byte_array(char* array, size_t array_len){
-	size_t i;
-
-	for( i = 0; i < array_len; i++){
-	    printf("%02X", (uint8_t) array[i]);
-	    fflush(stdout);
-	}
-}
 
 void symEncrypt(const uint8_t* input, size_t ilen, uint8_t* key, uint8_t* output, size_t* olen) {
 #if defined(CONTIKI_TARGET_ZOUL)
@@ -451,7 +455,7 @@ size_t Node::getChildren(Node** ret_children) const {
 
 // DecryptionKey
 
-DecryptionKey::DecryptionKey(const Node& policy): accessPolicy(policy) {
+DecryptionKey::DecryptionKey(Node* policy): accessPolicy(policy) {
 	Di1 = NULL;
 	Di2 = NULL;
 	Di_len = 0;
@@ -537,7 +541,7 @@ DecryptionKey _keyGeneration(element_t rootSecret,
    size_t shares_len = 0;
    accessPolicy->getSecretShares(&shares, &shares_len, rootSecret);
    
-   DecryptionKey key(*accessPolicy);
+   DecryptionKey key(accessPolicy);
    key.Di1 = (int*) malloc(leafs_len*sizeof(int));
    key.Di2 = (element_t*) malloc(leafs_len*sizeof(element_t));
    key.Di_len = leafs_len;
@@ -618,7 +622,7 @@ void recoverSecret(DecryptionKey* key,
    element_t* sat2 = NULL;
    size_t sat_len = 0;
 
-   key->accessPolicy.satisfyingAttributes(&sat1, &sat2, &sat_len, attributes, attrs_len, &rootCoeff);
+   key->accessPolicy->satisfyingAttributes(&sat1, &sat2, &sat_len, attributes, attrs_len, &rootCoeff);
    //element_clear(rootCoeff);
 
    if(sat_len == 0) {
