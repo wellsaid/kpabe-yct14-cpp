@@ -92,7 +92,7 @@ char* yct14_decrypt(void* keyBuff,
 void yct14_priv_free(void* prvParBuff) {
 	PrivateParams* priv = (PrivateParams*) prvParBuff;
 
-	element_clear(priv->mk); /* TODO: Causes invalid access and crash later on */
+	//element_clear(priv->mk); /* TODO: Causes invalid access and crash later on */
 	free(priv->Si1);
 	for(unsigned int i = 0; i < priv->Si_len; i++){
 		element_clear(priv->Si2[i]);
