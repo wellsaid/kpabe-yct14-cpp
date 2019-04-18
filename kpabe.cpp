@@ -454,16 +454,19 @@ DecryptionKey::DecryptionKey(Node* policy): accessPolicy(policy) {
 }
 
 DecryptionKey::DecryptionKey(const DecryptionKey& other):
-	Di1(other.Di1), Di2(other.Di2), Di_len(other.Di_len),
-	accessPolicy(other.accessPolicy) { }
+	accessPolicy(other.accessPolicy), 
+	Di1(other.Di1), 
+	Di2(other.Di2), 
+	Di_len(other.Di_len)
+	{}
 
 DecryptionKey& DecryptionKey::operator=(DecryptionKey other) {
 	//TODO: check if not self
 	//assert(this != &other);
+	accessPolicy = other.accessPolicy;
 	Di1 = other.Di1;
 	Di2 = other.Di2;
 	Di_len = other.Di_len;
-	accessPolicy = other.accessPolicy;
 	return *this;
 }
 
@@ -541,7 +544,7 @@ DecryptionKey _keyGeneration(element_t rootSecret,
    // The below is: Du[attr] = shares[attr] / attributeSecrets[attr]
    unsigned int i, j;
    for(i = 0; i < leafs_len; i++) {
-	   element_t* scramblingKey;
+	   element_t* scramblingKey = NULL;
 	   for(j = 0; j < scramblingKeysLen; j++){
 		   if(scramblingKeys1[j] == leafs[i]){
 			   scramblingKey = &scramblingKeys2[j];
@@ -589,7 +592,7 @@ void createSecret(Cw_t** Cw, PublicParams* params,
       (*Cw)->index[i] = attributes[i];
       element_init_G1((*Cw)->elem[i], getPairing());
 
-      element_t* param;
+      element_t* param = NULL;
       for(j = 0; j < params->Pi_len; j++){
     	  if(params->Pi1[j] == attributes[i]){
     		  param = &params->Pi2[j];
@@ -631,7 +634,7 @@ void recoverSecret(DecryptionKey* key,
    // NOTE: attrCoeffPair is modified
    unsigned int i, j;
    for(i = 0; i < sat_len; i++) {
-	   element_t* attrDi;
+	   element_t* attrDi = NULL;
 	   for(j = 0; j < key->Di_len; j++){
 		   if(key->Di1[j] == sat1[i]){
 			   attrDi = &key->Di2[j];
@@ -640,7 +643,7 @@ void recoverSecret(DecryptionKey* key,
 	   }
       element_mul(sat2[i], *attrDi, sat2[i]);
 
-      element_t* elem;
+      element_t* elem = NULL;
       for(j = 0; j < Cw->len; j++){
     	  if(Cw->index[j] == sat1[i]){
     		  elem = &Cw->elem[j];
