@@ -88,6 +88,18 @@ char* yct14_decrypt(void* keyBuff,
 	return decrypt(key, Cw, attributes, attrs_len, ciphertext, ct_len);
 }
 
+size_t yct4_cw_t_size_serialized(void* CwBuff){
+	Cw_t* Cw = (Cw_t*) CwBuff;
+
+	size_t size = sizeof(size_t); /* len */
+	size += Cw->len*sizeof(int);
+	for(size_t i = 0; i < Cw->len; i++){
+		size += element_length_in_bytes(Cw->elem[i]);
+	}
+
+	return size;
+}
+
 // memory freeing
 void yct14_priv_free(void* prvParBuff) {
 	PrivateParams* priv = (PrivateParams*) prvParBuff;
